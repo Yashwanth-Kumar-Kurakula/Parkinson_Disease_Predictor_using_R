@@ -1,0 +1,1245 @@
+---
+title: "Parkinson_Disease_Predictor_using_R"
+author: "Yashwanth Kumar Kurakula"
+date: "2024-10-27"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+Let us First begin with Importing necessary libraries
+
+```{r}
+# List of required packages
+packages <- c("dplyr", "e1071", "rpart", "randomForest", "caTools", 
+              "corrplot", "xgboost", "Hmisc", "caret", "glmnet",
+              "ggplot2", "tibble", "tidyr", "caret", "glmnet",
+              "e1071")
+
+# Install packages that are not installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(!installed_packages)) {
+  install.packages(packages[!installed_packages])
+}
+
+# Load all the packages
+lapply(packages, library, character.only = TRUE)
+
+cat("Libraries loaded successfully.\n")
+```
+
+## Data Preparation and Exploratory Analysis
+
+### 1. **Loading the Dataset**
+
+We begin by importing the dataset (***"parkinsons_data.csv"***) and
+examining the available information.
+
+### 2. **Defining Target Variables**
+
+Next, we identify and specify our target variables.
+
+### 3. **Identifying Potential Predictors**
+
+We search for parameters that may have significant correlations with our
+target variables.
+
+### 4. **Statistical Inference Methods**
+
+To draw initial conclusions, we employ various statistical inference
+techniques, with a focus on: - Data visualization - Exploratory data
+analysis
+
+### 5. **Data Cleaning and Pre-processing**
+
+In this crucial step, we: - Remove inconsistencies - Handle missing
+values - Format data appropriately
+
+> ***Note:*** This preparatory phase is essential for ensuring the
+> accuracy and reliability of our subsequent data analysis.
+
+```{r}
+
+#Loading the dataset
+pd <- read.csv("parkinsons_data.csv")
+```
+
+```{r}
+#Let us take a look at the glimpse of the data
+glimpse(pd)
+```
+
+## Analysis of the Parkinson's Dataset
+
+The dataset comprises **195 rows** (observations) and **24 columns**
+(variables), with each row representing a single voice recording or
+analysis session.
+
+### Column Descriptions
+
+#### 1. Identification
+
+-   **name**: Anonymized unique identifier for each recording (e.g.,
+    "phon_R01_S01_1")
+
+#### 2. Voice Frequency Measures (MDVP: Multi-Dimensional Voice Program)
+
+-   **MDVP.Fo.Hz**: Fundamental frequency (average pitch) in Hertz
+-   **MDVP.Fhi.Hz**: Highest fundamental frequency
+-   **MDVP.Flo.Hz**: Lowest fundamental frequency
+
+#### 3. Jitter Measurements (variations in voice frequency)
+
+-   **MDVP.Jitter...**: Percentage of jitter
+-   **MDVP.Jitter.Abs.**: Absolute jitter in microseconds
+-   **MDVP.RAP**: Relative Average Perturbation
+-   **MDVP.PPQ**: Pitch Period Perturbation Quotient
+-   **Jitter.DDP**: Difference of Differences of Periods
+
+#### 4. Shimmer Measurements (variations in voice amplitude)
+
+-   **MDVP.Shimmer**: Percentage of shimmer
+-   **MDVP.Shimmer.dB.**: Shimmer in decibels
+-   **Shimmer.APQ3**: Three-point Amplitude Perturbation Quotient
+-   **Shimmer.APQ5**: Five-point Amplitude Perturbation Quotient
+-   **MDVP.APQ**: Amplitude Perturbation Quotient
+-   **Shimmer.DDA**: Difference of Differences in Amplitudes
+
+#### 5. Noise and Harmonic Measures
+
+-   **NHR**: Noise-to-Harmonic Ratio
+-   **HNR**: Harmonic-to-Noise Ratio
+
+#### 6. Status
+
+-   **status**: Parkinson's disease status (0 = probably no PD, 1 = has
+    PD)
+
+#### 7. Advanced Voice Measures
+
+-   **RPDE**: Recurrence Period Density Entropy
+-   **DFA**: Detrended Fluctuation Analysis
+-   **spread1** and **spread2**: Nonlinear measures of fundamental
+    frequency variation
+-   **D2**: Correlation dimension
+-   **PPE**: Pitch Period Entropy
+
+### Data Types
+
+-   Most variables: **double** (dbl) - continuous numerical data
+-   'name' column: **character** (chr) - text identifiers
+-   'status' column: **integer** (int) - binary classifier
+
+### Value Ranges
+
+-   Frequency measures: typically between 74 and 160 Hz
+-   Jitter and Shimmer measurements: small values (percentages or small
+    fractions)
+-   NHR and HNR: voice quality indicators
+-   Advanced measures: represent complex voice characteristics
+
+### Potential Use
+
+This dataset is designed for analyzing voice characteristics to
+potentially: 1. Diagnose Parkinson's disease 2. Monitor Parkinson's
+disease progression 3. Understand the impact of Parkinson's on voice
+production
+
+### Key Considerations
+
+1.  The 'status' column enables binary classification tasks (PD vs.
+    non-PD)
+2.  Diverse voice measures allow for comprehensive voice analysis
+3.  Potential high correlation between some columns may impact certain
+    analyses
+
+> ***Conclusion:*** This dataset offers a rich set of features for voice
+> analysis in Parkinson's disease research, potentially valuable for
+> developing diagnostic algorithms, monitoring disease progression, and
+> understanding the effects of Parkinson's on voice production.
+
+```{r}
+#We can take a look at the summary of the data
+summary(pd)
+```
+
+```{r}
+#We can use the View Function to take a look of the data in spreadsheet format
+#View(pd)
+```
+
+```{r}
+#Removing any NA or Null Values from the Data
+# Check for NA or NULL values
+na_count <- sum(is.na(pd))
+null_count <- sum(sapply(pd, is.null))
+
+cat("Number of NA values:", na_count, "\n")
+cat("Number of NULL values:", null_count, "\n")
+
+# Remove rows with NA or NULL values
+pd_clean <- pd %>%
+  na.omit() %>%
+  filter_all(~!is.null(.))
+
+# Check the dimensions of the original and cleaned datasets
+cat("Original dataset dimensions:", dim(pd), "\n")
+cat("Cleaned dataset dimensions:", dim(pd_clean), "\n")
+```
+
+Upon reviewing the Parkinson's dataset above, we observe that the
+"Status" column is a categorical variable. This column is used to
+indicate whether a patient is diagnosed with Parkinson's disease. A
+value of 1 represents a patient diagnosed with Parkinson's, while a
+value of 0 indicates the absence of the disease. In contrast, all other
+columns in the dataset contain continuous data, representing various
+biomedical voice measurements.
+
+```{r}
+#Converting the column "Status" to categorical so that we can deal with it in a better way
+#We will also get rid of the Name Column as we will not need it for analysis
+pd <- pd %>% select(-name) %>% mutate(across(c(status), as.factor))
+```
+
+The following bar chart offers a clear overview of the distribution of
+patients in the dataset based on their Parkinson's disease status. It
+visualizes the number of patients diagnosed with Parkinson's (Status =
+1) in comparison to those who are not affected by the disease (Status =
+0).
+
+```{r}
+# Assuming your data is stored in 'data' and 'status' is a column in your data frame
+ggplot(pd, aes(x = status)) +
+  geom_bar(fill = "skyblue", color = "black") +
+  geom_text(stat = 'count', aes(label = ..count..), vjust = 2) +
+  labs(x = "Status", y = "Count", title = "Parkinson Data Overview w.r.t Status") +
+  theme_minimal()
+```
+
+As depicted in the bar graph, the dataset contains 147 patients who are
+diagnosed with Parkinson's disease, and 48 patients who do not have the
+disease. We can conclude that the dataset has high number of patients
+effected with parkinson's disease.
+
+## Correlation Matrix
+
+The following code is utilized to create a correlation matrix focusing
+on the "Status" column. This analysis will help us uncover valuable
+insights regarding the relationships between various features in the
+dataset. The methodology we will employ to draw insights from the
+generated correlation matrix is outlined below:
+
+### Methodology for Analysis:
+
+**Strength of Relationships:**
+
+-   Correlation values range from -1 to 1. Values closer to -1 or 1
+    indicate stronger relationships between variables, while values near
+    0 suggest a weak or nonexistent linear relationship. Direction of
+    Relationships:
+
+-   Positive correlations (values closer to 1) suggest that as one
+    variable increases, the other variable tends to increase as well.
+    Conversely, negative correlations (values closer to -1) indicate
+    that as one variable increases, the other variable tends to
+    decrease.
+
+**Focus on the "Status" Row/Column:**
+
+It is essential to pay special attention to the correlations between
+"status" and other features in the dataset. These values will highlight
+which factors are most strongly associated with the presence of
+Parkinson's disease.
+
+**Identify Top Correlations:**
+
+Looking for the features exhibiting the highest absolute correlation
+values with "status". These features are likely to be the most
+influential in determining the status of Parkinson's disease.
+
+**Group Related Features:** Features that display similar correlation
+patterns may be measuring related aspects of voice or movement.
+Identifying these groups can provide further insights into the
+underlying characteristics associated with Parkinson's disease.
+
+By carefully analyzing the correlation matrix, we can gain a deeper
+understanding of the relationships within the data, potentially
+identifying key factors relevant to the diagnosis and monitoring of
+Parkinson's disease.
+
+```{r}
+# Calculate correlation matrix
+data <- pd %>% mutate(across(c(status), as.numeric))
+glimpse(data)
+
+cor_matrix <- cor(data)
+
+# Get correlations with status
+status_cor <- cor_matrix["status", ]
+
+# Sort correlations by absolute value
+status_cor_sorted <- sort(abs(status_cor), decreasing = TRUE)
+
+# Select top 15 correlations (excluding status itself)
+top_correlations <- names(status_cor_sorted)[2:16]
+
+# Create a subset of the correlation matrix
+cor_subset <- cor_matrix[c("status", top_correlations), c("status", top_correlations)]
+
+# Plot the subset
+corrplot(cor_subset, method = "color", type = "upper", order = "hclust",
+         tl.col = "black", tl.srt = 45, tl.cex = 0.5,
+         col = colorRampPalette(c("#6D9EC1", "white", "#E46726"))(200),
+         addCoef.col = "black", number.cex = 0.5, number.digits = 2)
+
+# Print the top correlations
+print(status_cor_sorted[1:16])
+
+```
+
+While the correlation matrix provides initial insights into the
+relationships between various features in the dataset, its utility is
+somewhat limited due to the large number of columns, making it difficult
+to draw clear, conclusive interpretations. To overcome this, we will
+proceed with a more granular approach by generating a series of box
+plots, each representing a specific feature in the dataset. These box
+plots will allow us to compare the distribution of values between
+individuals diagnosed with Parkinson's disease (Status = 1) and those
+without the disease (Status = 0).
+
+The following methodology will guide our interpretation of the box
+plots:
+
+**Box Plot Representation:** Each box plot will display the distribution
+of a particular feature, with separate boxes for patients with
+Parkinson's (Status = 1) and those without (Status = 0).
+
+**Color Coding:** The boxes will be colored differently for the two
+status groups to enhance visual clarity and aid in interpretation.
+Predictive Insights: If the boxes for Status = 0 and Status = 1 are
+well-separated for a given feature, it may indicate that the feature is
+useful in distinguishing between individuals with and without
+Parkinson's disease.
+
+### Key Points to Consider:
+
+**Median Differences:** If the median lines (which represent the central
+tendency) in the boxes are at different levels for Status = 0 and Status
+= 1, it indicates a potential difference in the central values of that
+feature between the two groups.
+
+**Spread Differences:** A noticeable difference in the size of the boxes
+or whiskers between Status = 0 and Status = 1 suggests a difference in
+variability of that feature between the two groups. Overlap: Minimal
+overlap between the boxes for Status = 0 and Status = 1 implies that the
+feature might be more effective in predicting the presence of
+Parkinson's disease.
+
+**Outliers:** The presence of outliers can provide additional insights.
+If one status group has significantly more outliers than the other for a
+particular feature, this could highlight an important distinction
+between the two groups.
+
+```{r}
+
+# Prepare the data
+data_prepared <- data %>%
+  mutate(status = case_when(
+    status == 1 ~ "Parkinson's",
+    TRUE ~ "No Parkinson's"  # This will catch both 0 and NA values
+  )) %>%
+  mutate(status = factor(status, levels = c("No Parkinson's", "Parkinson's")))
+
+# Melt the data frame to long format
+data_long <- data_prepared %>%
+  pivot_longer(cols = -status, names_to = "feature", values_to = "value")
+
+# Create box plots
+ggplot(data_long, aes(x = status, y = value, fill = status)) +
+  geom_boxplot() +
+  facet_wrap(~ feature, scales = "free_y", ncol = 4) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.text = element_text(size = 8),
+        legend.position = "bottom") +
+  labs(x = "Parkinson's Status", 
+       y = "Value", 
+       fill = "Status") +
+  scale_fill_manual(values = c("No Parkinson's" = "#66c2a5", "Parkinson's" = "#fc8d62"))
+
+# Save the plot to have a better look at it and compare the observations
+#ggsave("parkinsons_features_boxplot.png", width = 20, height = 16, dpi = 300)
+
+```
+
+Based on some initial observations from the boxplots and correlation
+matrix, it is evident that the columns or rather the parameters "NHR",
+"HNR" and "RDPE" seem to be effecting out target variable which is
+"status". Let us take an in-depth look on them
+
+```{r}
+# Select relevant columns and handle NA values
+selected_data <- data %>%
+  select(status, NHR, HNR, RPDE) %>%
+  mutate(status = case_when(
+    status == 1 ~ "Parkinson's",
+    TRUE ~ "No Parkinson's"  # This will catch both 0 and NA values
+  )) %>%
+  mutate(status = factor(status, levels = c("No Parkinson's", "Parkinson's")))
+
+# Reshape the data for plotting
+long_data <- selected_data %>%
+  pivot_longer(cols = c(NHR, HNR, RPDE), names_to = "Variable", values_to = "Value")
+
+# Create boxplots
+boxplot <- ggplot(long_data, aes(x = Variable, y = Value, fill = status)) +
+  geom_boxplot() +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 3) +
+  labs(title = "Comparison of NHR, HNR, and RPDE by Parkinson's Status",
+       x = "Variable", y = "Value", fill = "Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom") +
+  scale_fill_manual(values = c("No Parkinson's" = "#66c2a5", "Parkinson's" = "#fc8d62"))
+
+# Display the plots
+print(boxplot)
+
+```
+
+```{r}
+# Create violin plots
+violinplot <- ggplot(long_data, aes(x = Variable, y = Value, fill = status)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.1, fill = "white", alpha = 0.5) +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 3) +
+  labs(title = "Comparison of NHR, HNR, and RPDE by Parkinson's Status",
+       x = "Variable", y = "Value", fill = "Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom") +
+  scale_fill_manual(values = c("No Parkinson's" = "#66c2a5", "Parkinson's" = "#fc8d62"))
+
+print(violinplot)
+```
+
+Let us also look at the bar graph of the Parameters plotted against
+their mean value
+
+```{r}
+# Select relevant columns and handle NA values
+selected_data <- data %>%
+  select(status, NHR, HNR, RPDE) %>%
+  mutate(status = case_when(
+    status == 1 ~ "Parkinson's",
+    TRUE ~ "No Parkinson's"  # This will catch both 0 and NA values
+  )) %>%
+  mutate(status = factor(status, levels = c("No Parkinson's", "Parkinson's")))
+
+# Calculate means for each variable by status
+summary_data <- selected_data %>%
+  group_by(status) %>%
+  summarise(
+    NHR = mean(NHR, na.rm = TRUE),
+    HNR = mean(HNR, na.rm = TRUE),
+    RPDE = mean(RPDE, na.rm = TRUE)
+  ) %>%
+  pivot_longer(cols = c(NHR, HNR, RPDE), names_to = "Variable", values_to = "Mean")
+
+# Create bar graph
+bar_plot <- ggplot(summary_data, aes(x = Variable, y = Mean, fill = status)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9), width = 0.8) +
+  geom_text(aes(label = sprintf("%.2f", Mean)), 
+            position = position_dodge(width = 0.9), 
+            vjust = 2, size = 3) +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 3) +
+  labs(title = "Comparison of NHR, HNR, and RPDE by Parkinson's Status",
+       x = "Parameters / Variable", y = "Mean Value", fill = "Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom") +
+  scale_fill_manual(values = c("No Parkinson's" = "#66c2a5", "Parkinson's" = "#fc8d62"))
+
+# Display the plot
+print(bar_plot)
+```
+
+From the Data Visualization, we can infer the following:
+
+1.  Noise-to-Harmonic Ratio (NHR): Patients with Parkinson's disease
+    show a slightly higher NHR (0.03) compared to those without
+    Parkinson's (0.01). This suggests that Parkinson's patients may have
+    a higher ratio of noise to tonal components in their voice.
+
+2.  Harmonic-to-Noise Ratio (HNR): Patients with Parkinson's disease
+    actually demonstrate a higher HNR (24.68) compared to those without
+    Parkinson's (20.97). This indicates that Parkinson's patients in
+    this data set have a higher ratio of harmonic components to noise in
+    their voice.
+
+3.  Recurrence Period Density Entropy (RPDE): The RPDE is indeed higher
+    in patients with Parkinson's disease (0.52) compared to those
+    without (0.44). This suggests that the nonlinear dynamical
+    complexity measure RPDE is higher in patients affected by
+    Parkinson's disease.
+
+These observations highlight differences in voice characteristics
+between individuals with and without Parkinson's disease, which could
+potentially be useful in diagnostic or monitoring contexts.
+
+With these key points in mind, we proceed to create our machine learning
+models to predict whether a person has parkinson's or not.
+
+```{r}
+#Printing the Column Names with their Numbers so that we can get the column numbers of the target and predictor variables
+column_names <-  colnames(data)
+
+column_info <- tibble(
+  Column_Name = column_names,
+  Column_Number = seq_along((column_names))
+)
+
+print(column_info, n=Inf)
+```
+
+## Decision Tree
+
+A Decision Tree is a supervised machine learning algorithm used for both
+classification and regression tasks. It creates a model that predicts
+the value of a target variable by learning simple decision rules
+inferred from the data features.
+
+### Key Mechanics of Decision Trees:
+
+**Tree Structure:** The algorithm creates a tree-like model of
+decisions, where each internal node represents a "test" on an attribute,
+each branch represents the outcome of the test, and each leaf node
+represents a class label or a numerical value.
+
+**Splitting:** At each node, the algorithm selects the best feature to
+split the data based on certain criteria (e.g., Gini impurity,
+information gain).
+
+**Pruning:** To prevent overfitting, the tree is often pruned by setting
+a maximum depth or minimum number of samples per leaf.
+
+**Complexity Parameter (cp):** In this case, the optimal cp value was
+found to be 0.28, which controls the size of the tree and helps prevent
+overfitting.
+
+**Application to Parkinson's Disease Prediction:** In this context, the
+Decision Tree is used to classify patients as having Parkinson's disease
+(1) or not having Parkinson's disease (0) based on three input
+parameters: - NHR (Noise-to-Harmonic Ratio) - HNR (Harmonic-to-Noise
+Ratio) - RPDE (Recurrence Period Density Entropy)
+
+These parameters are related to voice characteristics, which can be
+indicative of Parkinson's disease due to its effects on speech and
+vocalization.
+
+```{r}
+
+# Define the dataset and target variables
+X <- pd[, c(15, 16, 18)]  # Select columns 15, 16, and 18 as predictors
+Y <- factor(pd[, 17])   # Column 17 is the status target variable, convert to factor
+
+# Print message indicating dataset and target variables are defined successfully
+cat("Dataset and target variables defined successfully.\n")
+
+# Perform train-test split
+set.seed(169) # for reproducibility
+train_indices <- createDataPartition(Y, p = 0.8, list = FALSE)
+X_train <- X[train_indices, ]
+Y_train <- Y[train_indices]
+X_test <- X[-train_indices, ]
+Y_test <- Y[-train_indices]
+
+# Print message indicating train-test split is completed
+cat("Train-test split completed.\n")
+
+# Define the hyperparameter grid for Decision Tree
+grid_cp <- seq(0.01, 0.5, by = 0.01)  # Complexity parameter grid
+
+# Print message indicating hyperparameter grid is defined for Decision Tree
+cat("Hyperparameter grid defined successfully for Decision Tree.\n")
+
+# Define the training control for hyperparameter tuning
+ctrl <- trainControl(method = "cv", number = 5, verboseIter = TRUE)
+
+# Print message indicating training control is defined
+cat("Training control defined successfully.\n")
+
+# Combine predictors and target for training
+train_data <- data.frame(X_train, status = Y_train)
+
+# Train Decision Tree
+cat("Training Decision Tree...\n")
+tryCatch({
+  dt_model <- train(status ~ ., data = train_data, method = "rpart", 
+                    trControl = ctrl, tuneGrid = data.frame(cp = grid_cp))
+  
+  # Print message indicating training Decision Tree is completed
+  cat("Training Decision Tree completed.\n")
+}, error = function(e) {
+  print("Error occurred during training Decision Tree:")
+  print(e)
+})
+
+# Check if the model was trained successfully before making predictions
+if (exists("dt_model")) {
+  # Make predictions
+  cat("Making predictions...\n")
+  predictions <- predict(dt_model, newdata = X_test)
+  
+  # Ensure Y_test is a factor with the same levels as predictions
+  Y_test <- factor(Y_test, levels = levels(predictions))
+  
+  # Calculate performance metrics
+  dt_confusion_matrix <- confusionMatrix(predictions, Y_test)
+  dt_accuracy <- dt_confusion_matrix$overall['Accuracy']
+  
+  # Print results
+  cat("\nModel Performance:\n")
+  cat("Accuracy:", dt_accuracy, "\n")
+  print(dt_confusion_matrix)
+  
+  # Save the trained model
+  saveRDS(dt_model, "decision_tree_model_parkinsons.rds")
+  cat("\nModel saved.\n\n")
+} else {
+  cat("Failed to train Decision Tree model. Please check for errors.\n")
+}
+```
+
+## Model Performance Metrics
+
+### Accuracy
+
+**0.7632 (76.32%)** - This indicates that the model correctly classifies
+76.32% of the cases.
+
+### Confusion Matrix
+
+| Metric               | Value |
+|----------------------|-------|
+| True Negatives (TN)  | 5     |
+| False Positives (FP) | 5     |
+| False Negatives (FN) | 4     |
+| True Positives (TP)  | 24    |
+
+### Key Performance Indicators
+
+-   **Sensitivity (True Positive Rate)**: 0.5556
+    -   The model correctly identifies 55.56% of patients without
+        Parkinson's disease.
+-   **Specificity**: 0.8276
+    -   The model correctly identifies 82.76% of patients with
+        Parkinson's disease.
+-   **Positive Predictive Value**: 0.5000
+    -   50% of patients predicted to not have Parkinson's actually don't
+        have it.
+-   **Negative Predictive Value**: 0.8571
+    -   85.71% of patients predicted to have Parkinson's actually have
+        it.
+-   **Balanced Accuracy**: 0.6916
+    -   The average of sensitivity and specificity, providing a balanced
+        measure of performance.
+
+### Interpretation
+
+1.  The model shows moderate performance in classifying Parkinson's
+    disease cases.
+2.  It has higher specificity than sensitivity, meaning it's better at
+    identifying patients with Parkinson's than those without.
+3.  The high negative predictive value suggests that when the model
+    predicts a patient has Parkinson's, it's often correct.
+4.  The lower positive predictive value indicates that the model may
+    have a higher rate of false positives when predicting
+    non-Parkinson's cases.
+
+### Limitations and Considerations
+
+-   The model uses only three voice-related features, which may limit
+    its predictive power.
+-   The relatively small sample size (38 test cases) may affect the
+    reliability of the performance metrics.
+-   Further feature engineering or inclusion of additional relevant
+    features might improve the model's performance.
+
+While this Decision Tree model shows promise in predicting Parkinson's
+disease based on voice characteristics, there's room for improvement. It
+could be useful as a preliminary screening tool, but should not be used
+as a sole diagnostic method. Further refinement of the model and
+validation with larger datasets would be beneficial for improving its
+predictive accuracy and reliability.
+
+## Random Forest
+
+Random Forest is an ensemble learning method that constructs multiple
+decision trees during training and outputs the class that is the mode of
+the classes (classification) or mean prediction (regression) of the
+individual trees. It's known for its high accuracy and ability to handle
+large datasets with higher dimensionality.
+
+**Key Mechanics of Random Forest:** **Ensemble Learning:** Combines
+multiple decision trees to make predictions. **Bagging:** Each tree is
+trained on a random subset of the data (with replacement). **Feature
+Randomness:** At each node split, only a random subset of features is
+considered. **Voting:** For classification, the final prediction is the
+majority vote of all trees. **Application to Parkinson's Disease
+Prediction:**
+
+In this case, Random Forest is used to classify patients as having
+Parkinson's disease (1) or not having Parkinson's disease (0) based on
+two input parameters selected by LASSO feature selection: - HNR
+(Harmonic-to-Noise Ratio) - RPDE (Recurrence Period Density Entropy) -
+These voice-related features are used to detect the presence of
+Parkinson's disease.
+
+```{r}
+X <- pd[, c(15, 16, 18)]  # Select columns 15, 16, and 18 as predictors
+Y <- factor(pd[, 17])   # Column 17 is the status target variable, convert to factor
+
+# Print message indicating dataset and target variables are defined successfully
+cat("Dataset and target variables defined successfully.\n")
+
+# Perform train-test split
+set.seed(169) # for reproducibility
+train_indices <- createDataPartition(Y, p = 0.8, list = FALSE)
+X_train <- X[train_indices, ]
+Y_train <- Y[train_indices]
+X_test <- X[-train_indices, ]
+Y_test <- Y[-train_indices]
+
+# Print message indicating train-test split is completed
+cat("Train-test split completed.\n")
+
+# Perform feature selection using LASSO
+cat("Performing feature selection using LASSO...\n")
+lasso_model <- cv.glmnet(as.matrix(X_train), Y_train, alpha = 1, family = "binomial")
+lasso_coef <- coef(lasso_model, s = "lambda.min")[-1,]
+lasso_selected_indices <- which(lasso_coef != 0)
+X_train_lasso <- X_train[, lasso_selected_indices]
+X_test_lasso <- X_test[, lasso_selected_indices]
+
+# Print selected features after LASSO
+cat("\nSelected features after LASSO:\n")
+selected_features_lasso <- colnames(X_train_lasso)
+print(selected_features_lasso)
+
+# Append status to the selected features data frame
+X_train_lasso$status <- Y_train
+
+# Print message indicating feature selection with LASSO is completed
+cat("Feature selection with LASSO completed.\n")
+
+# Define the hyperparameter grid for Random Forest
+grid_mtry <- seq(1, ncol(X_train_lasso) - 1)  # Exclude the target variable
+grid <- expand.grid(mtry = grid_mtry)
+
+# Print message indicating hyperparameter grid is defined
+cat("Hyperparameter grid defined successfully.\n")
+
+# Define the training control for hyperparameter tuning
+ctrl <- trainControl(method = "cv", number = 5, verboseIter = TRUE)
+
+# Print message indicating training control is defined
+cat("Training control defined successfully.\n")
+
+# Train Random Forest with LASSO selected features
+cat("Training Random Forest...\n")
+tryCatch({
+  rf_model <- train(status ~ ., data = X_train_lasso, method = "rf", trControl = ctrl, tuneGrid = grid)
+  best_mtry <- rf_model$bestTune$mtry
+  
+  # Print message indicating training Random Forest is completed
+  cat("Training Random Forest completed.\n")
+}, error = function(e) {
+  print("Error occurred during training Random Forest:")
+  print(e)
+})
+
+# Make predictions
+cat("Making predictions...\n")
+predictions <- predict(rf_model, newdata = X_test_lasso)
+rf_confusion_matrix <- confusionMatrix(predictions, Y_test)
+rf_accuracy <- rf_confusion_matrix$overall['Accuracy']
+
+# Print results
+cat("\nModel Performance:\n")
+cat("Accuracy:", rf_accuracy, "\n")
+print(rf_confusion_matrix)
+
+# Save the trained model
+saveRDS(rf_model, "rf_model_parkinsons.rds")
+cat("\nModel saved.\n\n")
+```
+
+## Model Performance Analysis: Random Forest
+
+### Accuracy
+
+**0.8158 (81.58%)** - This is higher than the Decision Tree's accuracy
+of 76.32%.
+
+### Confusion Matrix
+
+| Metric               | Value |
+|----------------------|-------|
+| True Negatives (TN)  | 4     |
+| False Positives (FP) | 2     |
+| False Negatives (FN) | 5     |
+| True Positives (TP)  | 27    |
+
+### Key Performance Indicators
+
+-   **Sensitivity (True Positive Rate)**: 0.4444
+    -   The model correctly identifies 44.44% of patients without
+        Parkinson's disease.
+    -   Lower than the Decision Tree's sensitivity (0.5556).
+-   **Specificity**: 0.9310
+    -   The model correctly identifies 93.10% of patients with
+        Parkinson's disease.
+    -   Higher than the Decision Tree's specificity (0.8276).
+-   **Positive Predictive Value**: 0.6667
+    -   66.67% of patients predicted to not have Parkinson's actually
+        don't have it.
+    -   Higher than the Decision Tree's PPV (0.5000).
+-   **Negative Predictive Value**: 0.8438
+    -   84.38% of patients predicted to have Parkinson's actually have
+        it.
+    -   Slightly lower than the Decision Tree's NPV (0.8571).
+-   **Balanced Accuracy**: 0.6877
+    -   The average of sensitivity and specificity.
+    -   Slightly lower than the Decision Tree's balanced accuracy
+        (0.6916).
+
+### Comparison with Decision Tree
+
+1.  The Random Forest model achieves higher overall accuracy (81.58% vs
+    76.32%).
+2.  It has higher specificity but lower sensitivity compared to the
+    Decision Tree.
+3.  The Random Forest model shows better positive predictive value.
+4.  The balanced accuracy is slightly lower for Random Forest.
+
+### Interpretation
+
+1.  The Random Forest model shows improved performance over the Decision
+    Tree in overall accuracy and specificity.
+2.  It's particularly good at identifying patients with Parkinson's
+    disease (high specificity).
+3.  However, it's less effective at identifying patients without
+    Parkinson's disease (lower sensitivity) compared to the Decision
+    Tree.
+4.  The model benefits from the ensemble approach, reducing overfitting
+    and improving generalization.
+
+## SVM
+
+SVM is a powerful supervised learning algorithm used for classification
+and regression tasks. It aims to find the hyperplane in an N-dimensional
+space that distinctly classifies the data points. SVM is particularly
+effective in high-dimensional spaces and is versatile due to its ability
+to use different kernel functions for decision boundaries
+
+### Key Mechanics of SVM:
+
+**Hyperplane:** SVM finds the optimal hyperplane that separates
+different classes with the maximum margin. **Support Vectors:** These
+are the data points nearest to the hyperplane that influence its
+position and orientation. **Kernel Trick:** Allows SVM to operate in
+higher-dimensional, implicit feature spaces without computing the
+coordinates of the data in that space. **Margin Maximization:** SVM aims
+to maximize the margin between classes to reduce generalization error.
+
+```{r}
+# Define the dataset and target variables
+X <- pd[, c(15, 16, 18)]  # Select columns 15, 16, and 18 as predictors
+Y <- factor(pd[, 17])   # Column 17 is the status target variable, convert to factor
+
+# Print message indicating dataset and target variables are defined successfully
+cat("Dataset and target variables defined successfully.\n")
+
+# Perform train-test split
+set.seed(123) # for reproducibility
+train_indices <- createDataPartition(Y, p = 0.8, list = FALSE)
+X_train <- X[train_indices, ]
+Y_train <- Y[train_indices]
+X_test <- X[-train_indices, ]
+Y_test <- Y[-train_indices]
+
+# Print message indicating train-test split is completed
+cat("Train-test split completed.\n")
+
+# Perform feature selection using LASSO
+cat("Performing feature selection using LASSO...\n")
+lasso_model <- cv.glmnet(as.matrix(X_train), Y_train, alpha = 1, family = "binomial")
+lasso_coef <- coef(lasso_model, s = "lambda.min")[-1,]
+lasso_selected_indices <- which(lasso_coef != 0)
+X_train_lasso <- X_train[, lasso_selected_indices, drop = FALSE]
+X_test_lasso <- X_test[, lasso_selected_indices, drop = FALSE]
+
+# Print selected features after LASSO
+cat("\nSelected features after LASSO:\n")
+selected_features_lasso <- colnames(X_train_lasso)
+print(selected_features_lasso)
+
+# Train SVM with LASSO selected features
+cat("Training SVM...\n")
+svm_model <- svm(x = X_train_lasso, y = Y_train, kernel = "radial", cost = 1000, gamma = 0.1)
+
+# Print message indicating training SVM is completed
+cat("Training SVM completed.\n")
+
+# Make predictions
+cat("Making predictions...\n")
+predictions <- predict(svm_model, newdata = X_test_lasso)
+
+# Calculate performance metrics
+svm_confusion_matrix <- confusionMatrix(predictions, Y_test)
+svm_accuracy <- svm_confusion_matrix$overall['Accuracy']
+
+# Print results
+cat("\nModel Performance:\n")
+cat("Accuracy:", svm_accuracy, "\n")
+print(svm_confusion_matrix)
+
+# Save the trained model
+saveRDS(svm_model, "lasso_svm_model_parkinsons.rds")
+cat("\nModel saved.\n\n")
+```
+
+## Model Performance Analysis: Support Vector Machine (SVM)
+
+### Accuracy
+
+**0.8158 (81.58%)** - Equal to the Random Forest model and higher than
+the Decision Tree's accuracy.
+
+### Confusion Matrix
+
+| Metric               | Value |
+|----------------------|-------|
+| True Negatives (TN)  | 2     |
+| False Positives (FP) | 0     |
+| False Negatives (FN) | 7     |
+| True Positives (TP)  | 29    |
+
+### Key Performance Indicators
+
+-   **Sensitivity (True Positive Rate)**: 0.22222
+    -   The model correctly identifies 22.22% of patients without
+        Parkinson's disease.
+    -   Lower than both Decision Tree and Random Forest.
+-   **Specificity**: 1.00000
+    -   The model correctly identifies 100% of patients with Parkinson's
+        disease.
+    -   Higher than both Decision Tree and Random Forest.
+-   **Positive Predictive Value**: 1.00000
+    -   100% of patients predicted to not have Parkinson's actually
+        don't have it.
+    -   Highest among all models.
+-   **Negative Predictive Value**: 0.80556
+    -   80.56% of patients predicted to have Parkinson's actually have
+        it.
+    -   Lower than both Decision Tree and Random Forest.
+-   **Balanced Accuracy**: 0.61111
+    -   The average of sensitivity and specificity.
+    -   Lower than both Decision Tree and Random Forest.
+
+### Comparison with Other Models
+
+1.  The SVM model achieves the same overall accuracy as Random Forest
+    (81.58%), higher than Decision Tree.
+2.  It has the highest specificity (100%) among all models but the
+    lowest sensitivity.
+3.  The SVM model shows perfect positive predictive value but lower
+    negative predictive value compared to other models.
+4.  The balanced accuracy is the lowest among all models due to its low
+    sensitivity.
+
+### Interpretation
+
+1.  The SVM model shows excellent performance in identifying patients
+    with Parkinson's disease (high specificity and positive predictive
+    value).
+2.  However, it struggles to correctly identify patients without
+    Parkinson's disease (low sensitivity).
+3.  The model tends to overclassify patients as having Parkinson's
+    disease, leading to potential false positives.
+4.  It performs well in overall accuracy but lacks balance between
+    sensitivity and specificity.
+
+## XGBoost
+
+XGBoost is an advanced implementation of gradient boosting machines.
+It's known for its speed and performance, particularly in
+structured/tabular data. XGBoost builds an ensemble of weak prediction
+models, typically decision trees, in a stage-wise fashion.
+
+### Key Mechanics of XGBoost:
+
+**Gradient Boosting:** Builds trees sequentially, with each new tree
+correcting errors made by the previous ensemble. **Regularization:**
+Includes L1 and L2 regularization to prevent overfitting. **Feature
+Importance:** Provides a measure of feature importance, helping in
+feature selection. **Handling Missing Values:** Can handle missing
+values internally.
+
+```{r}
+# Define the dataset and target variables
+X <- pd[, c(15, 16, 18)]  # Select columns 15, 16, and 18 as predictors
+Y <- as.numeric(as.factor(pd[, 17])) - 1  # Column 17 is the status target variable, convert to 0 and 1
+
+# Print message indicating dataset and target variables are defined successfully
+cat("Dataset and target variables defined successfully.\n")
+
+# Perform train-test split
+set.seed(123) # for reproducibility
+train_indices <- createDataPartition(Y, p = 0.8, list = FALSE)
+X_train <- X[train_indices, ]
+Y_train <- Y[train_indices]
+X_test <- X[-train_indices, ]
+Y_test <- Y[-train_indices]
+
+# Print message indicating train-test split is completed
+cat("Train-test split completed.\n")
+
+# Perform feature selection using LASSO
+cat("Performing feature selection using LASSO...\n")
+lasso_model <- cv.glmnet(as.matrix(X_train), Y_train, alpha = 1, family = "binomial")
+lasso_coef <- coef(lasso_model, s = "lambda.min")[-1,]
+lasso_selected_indices <- which(lasso_coef != 0)
+X_train_lasso <- X_train[, lasso_selected_indices, drop = FALSE]
+X_test_lasso <- X_test[, lasso_selected_indices, drop = FALSE]
+
+# Print selected features after LASSO
+cat("\nSelected features after LASSO:\n")
+selected_features_lasso <- colnames(X_train_lasso)
+print(selected_features_lasso)
+
+# Train XGBoost with LASSO selected features
+cat("Training XGBoost...\n")
+xgb_model <- xgboost(data = as.matrix(X_train_lasso), 
+                     label = Y_train,
+                     nrounds = 100, 
+                     objective = "binary:logistic",
+                     eval_metric = "logloss")
+
+# Print message indicating training XGBoost is completed
+cat("Training XGBoost completed.\n")
+
+# Make predictions
+cat("Making predictions...\n")
+predictions_prob <- predict(xgb_model, as.matrix(X_test_lasso))
+predictions <- ifelse(predictions_prob > 0.5, 1, 0)
+
+# Calculate performance metrics
+xgb_confusion_matrix <- confusionMatrix(factor(predictions), factor(Y_test))
+xgb_accuracy <- xgb_confusion_matrix$overall['Accuracy']
+
+# Print results
+cat("\nModel Performance:\n")
+cat("Accuracy:", xgb_accuracy, "\n")
+print(xgb_confusion_matrix)
+
+# Save the trained model
+saveRDS(xgb_model, "lasso_xgb_model_parkinsons.rds")
+cat("\nModel saved.\n\n")
+```
+
+## Model Performance Analysis: XGBoost
+
+### Accuracy
+
+**0.7179 (71.79%)** - Lower than the Decision Tree (76.32%), Random
+Forest (81.58%), and SVM (81.58%) models.
+
+### Confusion Matrix
+
+| Metric               | Value |
+|----------------------|-------|
+| True Negatives (TN)  | 3     |
+| False Positives (FP) | 6     |
+| False Negatives (FN) | 5     |
+| True Positives (TP)  | 25    |
+
+### Key Performance Indicators
+
+-   **Sensitivity (True Positive Rate)**: 0.37500
+    -   The model correctly identifies 37.50% of patients without
+        Parkinson's disease.
+    -   Higher than SVM but lower than Decision Tree and Random Forest.
+-   **Specificity**: 0.80645
+    -   The model correctly identifies 80.65% of patients with
+        Parkinson's disease.
+    -   Lower than all other models.
+-   **Positive Predictive Value**: 0.33333
+    -   33.33% of patients predicted to not have Parkinson's actually
+        don't have it.
+    -   Lowest among all models.
+-   **Negative Predictive Value**: 0.83333
+    -   83.33% of patients predicted to have Parkinson's actually have
+        it.
+    -   Comparable to other models.
+-   **Balanced Accuracy**: 0.59073
+    -   The average of sensitivity and specificity.
+    -   Lowest among all models.
+
+### Comparison with Other Models
+
+1.  The XGBoost model has the lowest overall accuracy among all models
+    tested.
+2.  It has better sensitivity than SVM but worse than Decision Tree and
+    Random Forest.
+3.  Its specificity is the lowest among all models.
+4.  The balanced accuracy is the lowest, indicating less balanced
+    performance between classes.
+
+### Interpretation
+
+1.  The XGBoost model shows moderate performance in classifying
+    Parkinson's disease cases.
+2.  It has a higher false positive rate compared to other models, as
+    indicated by the lower specificity.
+3.  The model struggles with correctly identifying non-Parkinson's
+    cases, as shown by the low positive predictive value.
+4.  Despite XGBoost's general reputation for high performance, it
+    underperformed in this specific case.
+
+### Displaying the Performance Metrics of Different Models
+
+```{r}
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+
+# Create a data frame with the accuracies
+accuracies <- data.frame(
+  Model = c("Decision Tree", "Random Forest", "SVM", "XGBoost"),
+  Accuracy = c(0.7631579, 0.8157895, 0.8157895, 0.7179487)
+)
+
+# Convert accuracies to percentage
+accuracies$Accuracy_Percent <- accuracies$Accuracy * 100
+
+# Create the bar plot
+ggplot(accuracies, aes(x = Model, y = Accuracy_Percent, fill = Model)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = sprintf("%.2f%%", Accuracy_Percent)), 
+            vjust = -0.5, size = 4) +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 10)) +
+  labs(title = "Parkinson's disease Predictor - Model Accuracy Comparison",
+       x = "Model",
+       y = "Accuracy (%)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none") +
+  scale_fill_brewer(palette = "Set2")
+
+# Save the plot
+ggsave("model_accuracy_comparison.png", width = 10, height = 6, dpi = 300)
+```
+
+## Conclusion
+
+Based on the analysis of the four models (Decision Tree, Random Forest,
+SVM, and XGBoost) for predicting Parkinson's disease using voice-related
+features, we can draw the following conclusions:
+
+#### Model Comparison:
+
+**Decision Tree:** Accuracy 76.32%, balanced performance (sensitivity
+55.56%, specificity 82.76%) **Random Forest:** Accuracy 81.58%, high
+specificity (93.10%) but lower sensitivity (44.44%) **SVM:** Accuracy
+81.58%, perfect specificity (100%) but low sensitivity (22.22%)
+**XGBoost:** Accuracy 71.79%, lowest overall performance (sensitivity
+37.50%, specificity 80.65%)
+
+#### Approach Differences:
+
+**Decision Tree:** Simple, interpretable model based on hierarchical
+decision rules. **Random Forest:** Ensemble method combining multiple
+decision trees, reducing overfitting. **SVM:** Finds the optimal
+hyperplane to separate classes in high-dimensional space. **XGBoost:**
+Advanced boosting technique, building trees sequentially to correct
+previous errors.
+
+#### Model Selection:
+
+Based on the results, the Random Forest model appears to be the most
+promising for this particular task. It offers the highest accuracy along
+with a good balance between sensitivity and specificity. The SVM model,
+while matching the accuracy of Random Forest, has an extreme imbalance
+between sensitivity and specificity, which could be problematic in
+practical applications.
+
+Finally, The Highest Accuracy that we could manage with the limited
+dataset and granual approach is pretty satisfactory. Sophisticated
+Optimization techniques can be used to improve the models accuracy so
+that it will perform better on real world data. To optimize these models
+and increase their performance for Parkinson's disease prediction, we
+may depend on the following approaches:
+
+-   **Feature Engineering and Selection:** Conduct more extensive
+    feature selection techniques beyond LASSO, such as Recursive Feature
+    Elimination or Principal Component Analysis. Create new features
+    that might capture more nuanced aspects of voice patterns associated
+    with Parkinson's disease. Investigate the correlation between
+    features and remove highly correlated ones to reduce
+    multicollinearity.
+
+-   **Hyperparameter Tuning:** Perform more extensive hyperparameter
+    optimization for each model, especially for Random Forest and
+    XGBoost, using techniques like Grid Search, Random Search, or
+    Bayesian Optimization. For SVM, experiment with different kernel
+    functions and their parameters.
+
+-   **Cross-Validation:** Implement k-fold cross-validation to ensure
+    more robust performance estimates and reduce the impact of data
+    splitting variability.
+
+-   **Handling Class Imbalance:** Apply techniques like SMOTE (Synthetic
+    Minority Over-sampling Technique) or class weighting to address the
+    imbalance in the dataset.
+
+-   **Ensemble Methods:** Explore ensemble methods that combine
+    predictions from multiple models, such as voting classifiers or
+    stacking.
+
+-   **Data Augmentation:** If possible, collect more data or use data
+    augmentation techniques to increase the dataset size, which could
+    improve model generalization.
+
+-   **Advanced Preprocessing:** Apply more sophisticated preprocessing
+    techniques to the voice data, such as spectral analysis or wavelet
+    transforms, to extract more informative features.
+
+-   **Model-Specific Optimizations:** For Decision Trees and Random
+    Forests, experiment with different tree depths and splitting
+    criteria. For SVM, try different kernel tricks and regularization
+    parameters. For XGBoost, fine-tune learning rate, tree depth, and
+    regularization parameters.
+
+-   **Interpretability Analysis:** Use techniques like SHAP (SHapley
+    Additive exPlanations) values to understand feature importance and
+    model decisions, which can guide further optimization.
+
+-   **Error Analysis:** Conduct a detailed analysis of misclassified
+    cases to identify patterns and potentially create new features or
+    rules to address these specific cases. By implementing these
+    strategies, it's likely that the performance of all models,
+    particularly the Random Forest and SVM models, can be significantly
+    improved. The goal should be to achieve a balance between high
+    accuracy and balanced sensitivity and specificity, ensuring the
+    model is both accurate and reliable for potential clinical
+    application in Parkinson's disease screening or diagnosis support.
+
+```{bash, eval=False}
+tail -n +2 data.csv | grep -v ',,' | grep -v '^,' | grep -v ',$' | awk -F',' 'length($1) == 6 && $1 ~ /^[0-9]+$/ {split($4, time, " "); $4 = time[1]; print $0}' OFS=',' | head -n 3
+```
